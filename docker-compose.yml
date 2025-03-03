@@ -98,7 +98,7 @@ services:
     build: .
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1  #updated
     volumes:
       - app_static:/usr/src/app/static
       - app_resources:/usr/src/app/resources
