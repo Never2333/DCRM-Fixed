@@ -53,7 +53,8 @@ SECURE_SSL    = int(os.environ.get('DCRM_SECURE_SSL', False)) == 1
 ALLOWED_HOSTS = [
     os.environ.get('DCRM_HOST', 'apt.82flex.com'),
     '127.0.0.1',
-    'localhost'
+    'localhost',
+    '*'
 ]
 print("[DCRM] Host: " + ALLOWED_HOSTS[0])
 
