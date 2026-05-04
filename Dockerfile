@@ -1,10 +1,29 @@
-FROM python:3.7
+FROM python:3.10-bullseye
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /usr/src/app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        default-libmysqlclient-dev \
+        gcc \
+        g++ \
+        gettext \
+        gnupg \
+        libbz2-dev \
+        libffi-dev \
+        libjpeg62-turbo-dev \
+        liblzma-dev \
+        libmemcached-dev \
+        libssl-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 CMD ["./uwsgi-run.sh"]
-

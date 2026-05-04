@@ -186,6 +186,25 @@ edit `docker-compose.yml`:
 1. change default FTP username and password in `services:pure-ftpd:environment`, `FTP_USER_NAME` and `FTP_USER_PASS`, enable [FTP over TLS](https://github.com/stilliard/docker-pure-ftpd#TLS) if you want
 
 
+## Cloudflare / CDN notes
+
+DCRM publishes APT metadata (`InRelease`, `Release`, `Release.gpg`, `Packages`,
+`Packages.gz`, `Packages.bz2`, and `Packages.xz`) with revalidation headers so
+Cloudflare must not keep stale package indexes after a rebuild. Debian package
+files are versioned by their storage paths and are safe to cache for a long time.
+
+Recommended Cloudflare rules:
+
+1. For `https://your.repo/*Release*`, `https://your.repo/*Packages*`, and
+   `https://your.repo/InRelease`, use **Cache Level: Bypass** or respect origin
+   `Cache-Control`.
+2. Do not configure a page rule that forces long Edge TTLs on APT metadata.
+3. Long cache TTLs are OK for `/resources/debs/*` and other immutable package
+   payloads.
+4. Keep `Packages Compression` set to **All (Recommended)** to publish
+   `Packages.xz` for Sileo/Zebra while retaining gzip/bzip2 for older Cydia.
+
+
 ## 3.3. Configure GnuPG
 <a id="markdown-configure-gnupg" name="configure-gnupg"></a>
 

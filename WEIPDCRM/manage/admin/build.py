@@ -23,9 +23,11 @@ from __future__ import unicode_literals
 import os
 import bz2
 import gzip
+import lzma
 import shutil
 
 import hashlib
+import email.utils
 import subprocess
 from PIL import Image
 
@@ -72,10 +74,14 @@ def build_procedure(conf):
             version_count = version_set.count()
         else:
             version_set = Version.objects.raw(
-                "SELECT * FROM `WEIPDCRM_version` "
+                "SELECT v.* FROM `WEIPDCRM_version` v "
+                "INNER JOIN ("
+                "SELECT `c_package`, MAX(`id`) AS `id` "
+                "FROM `WEIPDCRM_version` "
                 "WHERE `enabled` = TRUE "
-                "GROUP BY `c_package` "
-                "ORDER BY `c_package`, `id` DESC"
+                "GROUP BY `c_package`"
+                ") latest ON latest.`id` = v.`id` "
+                "ORDER BY v.`c_package`, v.`id` DESC"
             )
             version_count = 0
             for version in version_set:
@@ -138,6 +144,17 @@ def build_procedure(conf):
                     break
                 build_temp_package_bz2.write(cache)
             build_temp_package_bz2.close()
+
+        # Compression XZ (Sileo/Zebra and modern APT prefer this when available).
+        build_temp_package.seek(0)
+        if conf["build_compression"] == 6:
+            build_temp_package_xz = lzma.open(os.path.join(build_temp_path, "Packages.xz"), mode="wb", preset=6)
+            while True:
+                cache = build_temp_package.read(16 * 1024)  # 16k cache
+                if not cache:
+                    break
+                build_temp_package_xz.write(cache)
+            build_temp_package_xz.close()
         
         # Close original Package file
         build_temp_package.close()
@@ -145,11 +162,13 @@ def build_procedure(conf):
         # Release
         active_release = Release.objects.get(id=conf["build_release"])
         active_release_control_dict = active_release.get_control_field()
+        active_release_control_dict["Date"] = email.utils.formatdate(usegmt=True)
         build_temp_release = open(os.path.join(build_temp_path, "Release"), mode="wb")
         DebianPackage.get_control_content(active_release_control_dict, build_temp_release)
         
-        # Checksum
-        if conf["build_secure"] is True:
+        # Checksums are useful even without GPG signing and are required by
+        # modern APT frontends (including Sileo/Zebra) to validate Packages.*.
+        if conf["build_validation"] > 0:
             def hash_file(hash_obj, file_path):
                 with open(file_path, "rb") as f:
                     for block in iter(lambda: f.read(65535), b""):
@@ -158,7 +177,8 @@ def build_procedure(conf):
             checksum_list = [
                 "Packages",
                 "Packages.gz",
-                "Packages.bz2"
+                "Packages.bz2",
+                "Packages.xz"
             ]
             build_validation_titles = [
                 "MD5Sum", "SHA1", "SHA256", "SHA512"
@@ -168,7 +188,7 @@ def build_procedure(conf):
             ]
             
             # Using a loop to iter different validation methods
-            for build_validation_index in range(0, 3):
+            for build_validation_index in range(0, 4):
                 if conf["build_validation"] > build_validation_index:
                     build_temp_release.write((build_validation_titles[build_validation_index] + ":\n").encode("utf-8"))
                     for checksum_instance in checksum_list:
@@ -195,8 +215,14 @@ def build_procedure(conf):
             password = preferences.Setting.gpg_password
             if password is not None and len(password) > 0:
                 subprocess.check_call(
-                    ["gpg", "-abs", "--homedir", os.path.join(settings.BASE_DIR, '.gnupg'), "--batch", "--yes", "--passphrase", password, "-o",
+                    ["gpg", "-abs", "--homedir", os.path.join(settings.BASE_DIR, '.gnupg'), "--batch", "--yes", "--pinentry-mode", "loopback", "--passphrase", password, "-o",
                      os.path.join(build_temp_path, "Release.gpg"),
+                     os.path.join(build_temp_path, "Release"),
+                     ]
+                )
+                subprocess.check_call(
+                    ["gpg", "--clearsign", "--homedir", os.path.join(settings.BASE_DIR, '.gnupg'), "--batch", "--yes", "--pinentry-mode", "loopback", "--passphrase", password, "-o",
+                     os.path.join(build_temp_path, "InRelease"),
                      os.path.join(build_temp_path, "Release"),
                      ]
                 )
@@ -204,6 +230,12 @@ def build_procedure(conf):
                 subprocess.check_call(
                     ["gpg", "-abs", "--homedir", os.path.join(settings.BASE_DIR, '.gnupg'), "--batch", "--yes", "-o",
                      os.path.join(build_temp_path, "Release.gpg"),
+                     os.path.join(build_temp_path, "Release"),
+                     ]
+                )
+                subprocess.check_call(
+                    ["gpg", "--clearsign", "--homedir", os.path.join(settings.BASE_DIR, '.gnupg'), "--batch", "--yes", "-o",
+                     os.path.join(build_temp_path, "InRelease"),
                      os.path.join(build_temp_path, "Release"),
                      ]
                 )
@@ -223,24 +255,26 @@ def build_procedure(conf):
         
         # Publish
         rename_list = [
+            "InRelease",
             "Release",
             "Release.gpg",
             "Packages",
             "Packages.gz",
-            "Packages.bz2"
+            "Packages.bz2",
+            "Packages.xz"
         ]
         for rename_instance in rename_list:
             rename_path = os.path.join(build_temp_path, rename_instance)
             rename_to_path = os.path.join(build_path, rename_instance)
             active_path = os.path.join(release_root, rename_instance)
             if os.path.exists(rename_path):
-                if os.path.exists(active_path):
-                    os.unlink(active_path)
-                shutil.copyfile(rename_path, active_path)
-                os.chmod(active_path, 0o755)
+                tmp_active_path = active_path + ".tmp"
+                shutil.copyfile(rename_path, tmp_active_path)
+                os.chmod(tmp_active_path, 0o644)
+                os.replace(tmp_active_path, active_path)
                 # os.rename(rename_path, rename_to_path)
                 shutil.move(rename_path, rename_to_path)
-                os.chmod(rename_to_path, 0o755)
+                os.chmod(rename_to_path, 0o644)
             else:
                 if os.path.exists(rename_to_path):
                     os.unlink(rename_to_path)
@@ -249,7 +283,8 @@ def build_procedure(conf):
 
         def thumb_png(png_path):
             img = Image.open(png_path)
-            img.thumbnail((60, 60), Image.ANTIALIAS)
+            resample = getattr(Image, "Resampling", Image).LANCZOS
+            img.thumbnail((60, 60), resample)
             img.save(png_path)
                 
         # Cydia Icon
@@ -272,7 +307,7 @@ def build_procedure(conf):
                 )
         if os.path.exists(cydia_icon_path):
             thumb_png(cydia_icon_path)
-            os.chmod(cydia_icon_path, 0o755)
+            os.chmod(cydia_icon_path, 0o644)
 
         build_instance = Build.objects.get(uuid=str(conf["build_uuid"]))
         if build_instance is not None:
