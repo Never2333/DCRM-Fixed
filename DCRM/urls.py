@@ -39,7 +39,7 @@ urlpatterns = [
     
     # Basic List
     url(
-        r'^(?P<resource_name>(CydiaIcon(.png)?|Release(.gpg)?|Packages(.gz|.bz2)?))$',
+        r'^(?P<resource_name>(CydiaIcon(.png)?|InRelease|Release(.gpg)?|Packages(.gz|.bz2|.xz)?))$',
         publish.basic_resource_fetch,
         name='basic_resource_fetch'
     ),
