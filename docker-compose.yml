@@ -1,11 +1,9 @@
-version: '3.2'
-
 # do not change any thing if you do not know what it means
 services:
   web:
     container_name: dcrm_web
     hostname: dcrm_web
-    image: nginx:1.17.6
+    image: nginx:1.28
     restart: always
     ports:
       #- "8080:80"   # test

@@ -40,7 +40,7 @@ redis==3.5.2
 requests==2.23.0
 rq==1.3.0  # fixed
 rq-scheduler==0.9.1  # fixed
-six==1.15.0
+six==1.17.0
 sqlparse==0.3.1
 urllib3  #updated
 uWSGI==2.0.28  #updated
