@@ -40,3 +40,11 @@ if "codeset" not in inspect.signature(gettext.translation).parameters:
         )
 
     gettext.translation = translation
+
+try:
+    from MySQLdb.converters import Thing2Literal, conversions
+
+    conversions.setdefault(str, Thing2Literal)
+    conversions.setdefault(bytes, Thing2Literal)
+except Exception:
+    pass
